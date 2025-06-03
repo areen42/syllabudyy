@@ -12,7 +12,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // Load environment variable
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAqiI6mRGI42uFANmxVfmVVE_UKtciL7_A';
 
 // PDF parsing endpoint
 app.post('/parse-syllabus', async (req, res) => {
@@ -27,7 +27,31 @@ app.post('/parse-syllabus', async (req, res) => {
     const data = await pdfParse(buffer);
     const text = data.text;
 
-    const prompt = `Extract all assignment names, due dates, and exam dates from this syllabus:\n\n${text}`;
+    const prompt = `Extract the following information from this syllabus into a structured JSON format:
+1. Course title
+2. Course code
+3. Instructor name
+4. Contact information
+5. Office hours
+6. Grading policy
+7. Important dates including assignments, exams, and project due dates
+8. Important notes or policies
+
+Format the response as valid JSON with the following structure:
+{
+  "courseTitle": "string",
+  "courseCode": "string",
+  "instructor": "string",
+  "contactInfo": "string",
+  "officeHours": "string",
+  "gradingPolicy": "string",
+  "importantDates": [
+    { "title": "string", "date": "string", "description": "string" }
+  ],
+  "importantNotes": ["string"]
+}
+
+Here's the syllabus content:\n\n${text}`;
 
     const geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -40,22 +64,46 @@ app.post('/parse-syllabus', async (req, res) => {
       }
     );
 
-    const geminiText = await geminiRes.text();
-
-    console.log('📦 Gemini raw response:', geminiText.substring(0, 500));
-
-    let parsed;
+    const geminiData = await geminiRes.json();
+    
+    // Log the structure of the response for debugging
+    console.log('📦 Gemini response structure:', Object.keys(geminiData));
+    
+    // Extract the text from the Gemini response
+    let geminiText = '';
     try {
-      const cleaned = geminiText.trim().startsWith('`')
-        ? geminiText.trim().slice(1, -1)
-        : geminiText;
-      parsed = JSON.parse(cleaned);
-    } catch (parseErr) {
-      console.error('❌ JSON parsing error from Gemini:', parseErr.message);
-      return res.status(500).json({ error: 'Failed to parse Gemini response as JSON.' });
+      geminiText = geminiData.candidates[0].content.parts[0].text;
+      console.log('📝 Gemini text:', geminiText.substring(0, 200) + '...');
+    } catch (err) {
+      console.error('❌ Failed to extract text from Gemini response:', err);
+      return res.status(500).json({ 
+        error: 'Failed to extract text from Gemini response',
+        rawResponse: geminiData
+      });
     }
-
-    return res.json(parsed);
+    
+    // Try to extract JSON from markdown code blocks
+    let jsonData;
+    try {
+      // First check if it's a markdown code block
+      const jsonMatch = geminiText.match(/``[(?:json)?\n([\s\S]*?)\n](cci:1://file:///c:/Users/shamz/OneDrive/Desktop/syllabuddy2.0/src/screens/main/SyllabusUploadScreen.tsx:428:26-428:85)``/);
+      if (jsonMatch && jsonMatch[1]) {
+        // Extract the JSON from the code block
+        jsonData = JSON.parse(jsonMatch[1].trim());
+      } else {
+        // If not in a code block, try parsing directly
+        jsonData = JSON.parse(geminiText.trim());
+      }
+      
+      return res.status(200).json(jsonData);
+    } catch (parseErr) {
+      console.error('❌ JSON parsing error:', parseErr.message);
+      // Return the error with the raw text so client can try to parse
+      return res.status(500).json({ 
+        error: 'Gemini response parsing failed',
+        rawText: geminiText 
+      });
+    }
   } catch (err) {
     console.error('🚨 Server error:', err);
     return res.status(500).json({ error: err.message || 'Internal server error' });
@@ -70,4 +118,3 @@ app.get('/', (req, res) => {
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
