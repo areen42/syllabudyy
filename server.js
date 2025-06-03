@@ -10,20 +10,23 @@ app.use(express.json({ limit: '50mb' }));
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-app.post('/parse-syllabus', async (req, res) => {
-  try {
-    const base64 = req.body.file;
-    if (!base64) {
-      return res.status(400).json({ error: 'Missing Base64 file' });
-    }
+app.get('/', (req, res) => {
+  res.send('✅ Syllabuddy Parser is running');
+});
 
+app.post('/parse-syllabus', async (req, res) => {
+  const base64 = req.body.file;
+  if (!base64) {
+    return res.status(400).json({ error: 'Missing Base64 file' });
+  }
+
+  try {
     const buffer = Buffer.from(base64, 'base64');
-    const data = await pdfParse(buffer);
-    const text = data.text;
+    const pdfData = await pdfParse(buffer);
+    const text = pdfData.text;
 
     const prompt = `
-    Extract structured syllabus details from the following text.
-    Return JSON in this format exactly:
+    From the following syllabus text, return structured JSON in exactly this format:
     {
       "courseTitle": "...",
       "courseCode": "...",
@@ -36,8 +39,8 @@ app.post('/parse-syllabus', async (req, res) => {
       ],
       "importantNotes": ["..."]
     }
-    
-    Text:
+
+    Syllabus Text:
     ${text}
     `;
 
@@ -52,25 +55,34 @@ app.post('/parse-syllabus', async (req, res) => {
       }
     );
 
-    const geminiData = await geminiRes.json();
-    const rawText = geminiData.candidates[0].content.parts[0].text;
-
-    try {
-      const structuredData = JSON.parse(rawText);
-      res.json(structuredData);
-    } catch (parseError) {
-      console.error("JSON Parsing error:", parseError);
-      res.status(500).json({ error: "Gemini response parsing failed", rawText });
+    if (!geminiRes.ok) {
+      console.error('Gemini API Error:', await geminiRes.text());
+      return res.status(500).json({ error: 'Gemini API request failed' });
     }
 
-  } catch (err) {
-    console.error("Server Error:", err);
-    res.status(500).json({ error: err.message });
+    const geminiData = await geminiRes.json();
+
+    if (!geminiData.candidates || !geminiData.candidates[0].content.parts[0].text) {
+      throw new Error('Invalid Gemini response structure');
+    }
+
+    const rawText = geminiData.candidates[0].content.parts[0].text;
+
+    let structuredData;
+    try {
+      structuredData = JSON.parse(rawText);
+    } catch (parseError) {
+      console.error('JSON Parsing Error:', parseError, rawText);
+      return res.status(500).json({ error: 'Failed to parse Gemini response', details: rawText });
+    }
+
+    res.status(200).json(structuredData);
+  } catch (error) {
+    console.error('Server Error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/', (req, res) => res.send('✅ Syllabuddy Parser is running'));
-
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
