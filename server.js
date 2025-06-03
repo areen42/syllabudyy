@@ -82,20 +82,33 @@ Here's the syllabus content:\n\n${text}`;
       });
     }
     
-    // Try to extract JSON from markdown code blocks
+    // Try to extract JSON from markdown code blocks using string methods instead of regex
     let jsonData;
     try {
-      // First check if it's a markdown code block
-      const codeBlockRegex = /``[(?:json)?\s*([\s\S]*?)\s*](cci:1://file:///c:/Users/shamz/OneDrive/Desktop/syllabuddy2.0/src/screens/main/SyllabusUploadScreen.tsx:429:26-429:69)``/;
-      const jsonMatch = geminiText.match(codeBlockRegex);
+      let jsonString = geminiText;
       
-      if (jsonMatch && jsonMatch[1]) {
-        // Extract the JSON from the code block
-        jsonData = JSON.parse(jsonMatch[1].trim());
-      } else {
-        // If not in a code block, try parsing directly
-        jsonData = JSON.parse(geminiText.trim());
+      // Check if the response contains markdown code blocks
+      if (geminiText.includes('```')) {
+        // Find the start of the JSON block after the opening ```
+        const startIndex = geminiText.indexOf('```') + 3;
+        // Find where the code block ends
+        const endIndex = geminiText.lastIndexOf('```');
+        
+        // Extract only the content between the markdown markers
+        if (startIndex < endIndex) {
+          // Skip the language identifier line if present
+          let contentStart = startIndex;
+          const nextLineBreak = geminiText.indexOf('\n', startIndex);
+          if (nextLineBreak > startIndex && nextLineBreak < endIndex) {
+            contentStart = nextLineBreak + 1;
+          }
+          
+          jsonString = geminiText.substring(contentStart, endIndex).trim();
+        }
       }
+      
+      // Parse the extracted or original text as JSON
+      jsonData = JSON.parse(jsonString);
       
       return res.status(200).json(jsonData);
     } catch (parseErr) {
