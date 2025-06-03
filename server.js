@@ -86,7 +86,9 @@ Here's the syllabus content:\n\n${text}`;
     let jsonData;
     try {
       // First check if it's a markdown code block
-      const jsonMatch = geminiText.match(/``[(?:json)?\n([\s\S]*?)\n](cci:1://file:///c:/Users/shamz/OneDrive/Desktop/syllabuddy2.0/src/screens/main/SyllabusUploadScreen.tsx:428:26-428:85)``/);
+      const codeBlockRegex = /``[(?:json)?\s*([\s\S]*?)\s*](cci:1://file:///c:/Users/shamz/OneDrive/Desktop/syllabuddy2.0/src/screens/main/SyllabusUploadScreen.tsx:429:26-429:69)``/;
+      const jsonMatch = geminiText.match(codeBlockRegex);
+      
       if (jsonMatch && jsonMatch[1]) {
         // Extract the JSON from the code block
         jsonData = JSON.parse(jsonMatch[1].trim());
